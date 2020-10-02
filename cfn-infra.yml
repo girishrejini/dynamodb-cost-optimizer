@@ -1,0 +1,105 @@
+Resources:
+  AthenaConfigRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - 'sts:AssumeRole'
+            Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: AthenaCloudWatchRole
+          PolicyDocument:
+            Statement:
+              - Action:
+                  - 'cloudwatch:Describe*'
+                  - 'cloudwatch:Get*'
+                  - 'cloudwatch:List*'
+                  - 'athena:GetQueryExecution'
+                Resource: '*'
+                Effect: Allow
+              - Action:
+                  - 'glue:*'
+                  - 'athena:*'
+                Resource: '*'
+                Effect: Allow
+              - Action:
+                  - 's3:*'
+                Resource:
+                  - !Sub 
+                    - 'arn:${AWS::Partition}:s3:::${OutputBucket}'
+                    - bucketName: !Ref OutputBucket
+                  - !Sub 
+                    - 'arn:${AWS::Partition}:s3:::${OutputBucket}/*'
+                    - bucketName: !Ref OutputBucket
+                Effect: Allow
+      Tags:
+        - Value: SAM
+          Key: 'lambda:createdBy'
+  Python:
+    Type: 'AWS::Lambda::LayerVersion'
+    Properties:
+      CompatibleRuntimes:
+        - python3.8
+      Content:
+        S3Bucket: ddb-co-lambda
+        S3Key: awswrangler-layer-1.6.2-py3.8.zip
+      Description: Python Layer
+      LayerName: DynamoDB-PythonLayer
+      LicenseInfo: MIT
+  CreateAthenaTable:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Handler: lambda_function.lambda_handler
+      Runtime: python3.8
+      Code:
+        S3Bucket: ddb-co-lambda
+        S3Key: DynamoDBCost-Analysis.zip
+      Description: ''
+      MemorySize: 2048
+      Timeout: 900
+      Role: !GetAtt 
+        - AthenaConfigRole
+        - Arn
+      Environment:
+        Variables:
+          period: !Ref period
+          bucket: !Ref OutputBucket
+          minimum: '5'
+          prefix: !Ref S3Prefix
+          utilization: '70'
+          region: us-east-1
+          iterations: '6'
+          database: default
+      Layers: 
+        [Ref: Python]
+    DependsOn:
+      - Python
+Parameters:
+  OutputBucket:
+    Description: S3 Bucket where Athena Query stores output
+    Type: String
+  LambdaTimeout:
+    Default: 900
+    Type: Number
+    Description: Maximum Lambda invocation runtime in seconds. (min 1 - 900 max)
+  LambdaMemory:
+    Default: 3008
+    Type: Number
+    Description: Lambda memory in MB (min 128 - 3008 max).
+  S3Prefix:
+    Default: dynamoresult
+    Type: String
+    Description: The prefix within Output Bucket where this function can store result.
+  FunctionName:
+    Description: Lambda Function Name for Creating Athena Table
+    Type: String
+  period:
+    Description: CloudWatch Metrics period in seconds
+    Type: Number
