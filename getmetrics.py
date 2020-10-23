@@ -3,129 +3,120 @@ import datetime
 from pytz import timezone
 import pandas as pd
 import awswrangler as wr
+
+# Create CloudWatch client
 cw = boto3.client('cloudwatch')
-now = datetime.datetime.now()
 
-#list metrics
-def lstmetrics (tablename,metric_name):
-    if tablename =='all':
-        lsm =   cw.list_metrics(
-            Namespace='AWS/DynamoDB',
-            MetricName=metric_name
+#List CloudWatch metrics
+def list_metrics(table_name, metric_name):
+
+    if table_name == 'all':
+        list_metrics_response = cw.list_metrics(
+                Namespace = 'AWS/DynamoDB',
+                MetricName = metric_name
             )
         try:       
-            lsm += cw.list_metrics(
-            Namespace='AWS/DynamoDB',
-            MetricName=metric_name ,
-            NextToken = lsm['NextToken']
+            list_metrics_response += cw.list_metrics(
+                Namespace = 'AWS/DynamoDB',
+                MetricName = metric_name ,
+                NextToken = list_metrics_response['NextToken']
             )
-        except: 
-            return lsm
+            return list_metrics_response
+        except:
+            print ('Error listing metrics for ALL DynamoDB tables')
+            # TODO Return null?
     else:
-        lsm =   cw.list_metrics(
-            Namespace='AWS/DynamoDB',
-            MetricName=metric_name,
-            Dimensions=[
-                {
-                    'Name': 'TableName',
-                    'Value': tablename
-                },
-            ]
+        list_metrics_response = cw.list_metrics(
+                Namespace = 'AWS/DynamoDB',
+                MetricName = metric_name,
+                Dimensions = [
+                    {
+                        'Name': 'TableName',
+                        'Value': table_name
+                    },
+                ]
             )
         try:       
-            lsm += cw.list_metrics(
-            Namespace='AWS/DynamoDB',
-            MetricName=metric_name ,
-            Dimensions=[
-                {
-                    'Name': 'TableName',
-                    'Value': tablename
-                },
-            ],
-            NextToken = lsm['NextToken']
+            list_metrics_response += cw.list_metrics(
+                Namespace = 'AWS/DynamoDB',
+                MetricName = metric_name ,
+                Dimensions = [
+                    {
+                        'Name': 'TableName',
+                        'Value': table_name
+                    },
+                ],
+                NextToken = list_metrics_response['NextToken']
             )
+            return list_metrics_response
         except: 
-            return lsm
-def getstatistcs (tablename,metric_name,interval,endtime,period,statistics) :
-    index = 0
-    print(endtime)
+            print ('Error listing metrics for DynamoDB table: ' + table_name)
+            # TODO Return null?
+
+# Get statistics for a given metric and table(s)
+def get_metric_statistics(table_name,metric_name,interval,end_time,period,statistics):
+
     metr_list = []
-    if tablename == 'all':
-        for key,value in lstmetrics(tablename,metric_name).items():
-            if key == 'Metrics':
-                for i in value:
-                        print("fetching metrics for: " , value[index]['Dimensions'])
-                        data = cw.get_metric_statistics(
-                        Namespace=value[index]['Namespace'],
-                        MetricName=value[index]['MetricName'],
-                        StartTime=endtime - datetime.timedelta(days=interval),
-                        EndTime=endtime,
-                        Dimensions=value[index]['Dimensions'],
-                        Period=period,
-                        Statistics=[statistics]
-                    
-                        )
-                        
-                        try:
-                            name = str(value[index]['Dimensions'][0]['Value']) + ":" + str(value[index]['Dimensions'][1]['Value'])
-                        except: 
-                            name = str(value[index]['Dimensions'][0]['Value'])
-                        
-                        tmdf = pd.DataFrame.from_dict(data['Datapoints'])
-                        tmdf['name'] =  name
-                        tmdf['metric_name'] = value[index]['MetricName']
-                        metr_list.append(tmdf)
-                        index += 1
-                        statistics = statistics
-    else:
-        for key,value in lstmetrics(tablename,metric_name).items():
-            if key == 'Metrics':
-                for i in value:
-                        print("fetching metrics for: " , value[index]['Dimensions'])
-                        data = cw.get_metric_statistics(
-                        Namespace=value[index]['Namespace'],
-                        MetricName=value[index]['MetricName'],
-                        StartTime=endtime - datetime.timedelta(days=interval),
-                        EndTime=endtime,
-                        Dimensions=value[index]['Dimensions'],
-                        Period=period,
-                        Statistics=[statistics]
-                    
-                        )
-                        
-                        try:
-                            name = str(value[index]['Dimensions'][0]['Value']) + ":" + str(value[index]['Dimensions'][1]['Value'])
-                        except: 
-                            name = str(value[index]['Dimensions'][0]['Value'])
-                        
-                        tmdf = pd.DataFrame.from_dict(data['Datapoints'])
-                        tmdf['name'] =  name
-                        tmdf['metric_name'] = value[index]['MetricName']
-                        metr_list.append(tmdf)
-                        index += 1
-                        statistics = statistics
-    try:
-        metrdf = pd.concat(metr_list,ignore_index=True)
-        metrdf.columns = ['timestamp','unit','Stat','name','metric_name']
-        del metrdf['Stat']
-        metrdf['statistic'] = statistics
-        metrdf = metrdf[['metric_name','statistic','timestamp','name','unit']]
-        metrdf['timestamp'] = metrdf['timestamp'].astype('datetime64[ns]')
-        return metrdf
-    except:
-        metrdf = None
-        return metrdf
     
-           
-                
+    # Get list of metrics
+    metrics = list_metrics(table_name,metric_name)
 
+    if not metrics:
+        for key,value in metrics.items():
+            if key == 'Metrics':
+                for index, val in enumerate(value):
+                    print(index + ". Metrics for: ", val['Dimensions'])
 
+                    # Get metric stats
+                    get_metric_statistics_response = cw.get_metric_statistics(
+                        Namespace = val['Namespace'],
+                        MetricName = val['MetricName'],
+                        StartTime = end_time - datetime.timedelta(days=interval),
+                        EndTime = end_time,
+                        Dimensions = val['Dimensions'],
+                        Period = period,
+                        Statistics = [statistics]
+                    )
+                    
+                    try:
+                        # Add comments here. What does val['Dimensions'][0] and val['Dimensions'][1] represent?
+                        name = str(val['Dimensions'][0]['Value']) + ":" + str(val['Dimensions'][1]['Value'])
+                    except: 
+                        name = str(val['Dimensions'][0]['Value'])
+                    
+                    tmdf = pd.DataFrame.from_dict(get_metric_statistics_response['Datapoints'])
+                    tmdf['name'] = name
+                    tmdf['metric_name'] = val['MetricName']
+                    metr_list.append(tmdf)
 
-#Getting  Metrics
-def gettingmetrics (params):
+        print ('No metrics found')
+        # TODO: Return null?
+
+    try:
+        if not metr_list:
+            # Add comments here. Explain what's happening below
+            metrdf = pd.concat(metr_list,ignore_index=True)
+            metrdf.columns = ['timestamp','unit','Stat','name','metric_name']
+            del metrdf['Stat']
+            metrdf['statistic'] = statistics
+            metrdf = metrdf[['metric_name','statistic','timestamp','name','unit']]
+            metrdf['timestamp'] = metrdf['timestamp'].astype('datetime64[ns]')
+        else:
+            print ('Metrics list empty')
+            # TODO: Return null?
+    except:
+        print ('Exception thrown when building metrics dataframe')
+        # TODO: Return null?
+        metrdf = None
+
+    return metrdf
+
+#Publish metrics to S3
+def publish_metrics_to_S3(params):
+
     athenadf = []
-    rcu = 'ConsumedReadCapacityUnits'
-    wcu = 'ConsumedWriteCapacityUnits'
+    crcu = 'ConsumedReadCapacityUnits'
+    cwcu = 'ConsumedWriteCapacityUnits'
     pru = 'ProvisionedWriteCapacityUnits'
     pwu = 'ProvisionedReadCapacityUnits'
     pperiod = 3600
@@ -134,27 +125,38 @@ def gettingmetrics (params):
     pstatistics = 'Average'
     tablename = params['dynamotablename']
     athenatablename = params['tablename']
-    bucket=params['bucket']
+    bucket = params['bucket']
     etime = params['endtime']
     interval = params['interval'] 
     etime = datetime.datetime.strptime(etime, '%Y-%m-%d %H:%M:%S')
-    intr = interval - 1
     actiontype = params['action']
+
     for i in range(interval):
+
         endtime = etime - datetime.timedelta(days=i) 
-        prudf = getstatistcs (tablename,pru,1,endtime,pperiod,pstatistics)       
-        pwudf = getstatistcs (tablename,pwu,1,endtime,pperiod,pstatistics) 
-        rcudf = getstatistcs (tablename,rcu,1,endtime,cperiod,cstatistics)
-        wcudf = getstatistcs (tablename,wcu,1,endtime,cperiod,cstatistics)
-        resdf = [wcudf,rcudf,pwudf,prudf]
+
+        #Get metric statistics for Provisioned Read Capacity Units
+        prcudf = get_metric_statistics (tablename, pru, 1, endtime, pperiod, pstatistics)   
+
+        #Get metric statistics for Provisioned Write Capacity Units    
+        pwcudf = get_metric_statistics (tablename, pwu, 1, endtime, pperiod, pstatistics) 
+
+        #Get metric statistics for Read Capacity Units
+        crcudf = get_metric_statistics (tablename, crcu, 1, endtime, cperiod, cstatistics)
+
+        #Get metric statistics for Write Capacity Units
+        cwcudf = get_metric_statistics (tablename, cwcu, 1, endtime, cperiod, cstatistics)
+
+        resdf = [cwcudf,crcudf,pwcudf,prcudf]
         resultdf = pd.concat(resdf,ignore_index=True)
         athenadf.append(resultdf)
             
-    if actiontype == 'insert'   :  
-        print("appending to existing table")
+    if actiontype == 'insert':  
+        print("Appending to existing table")
         athenadf = pd.concat(athenadf,ignore_index=True)
         location = 's3://' + bucket + '/' + 'metrics' + '/ests/'
 
+        # Write to S3 bucket in parquet format
         wr.s3.to_parquet(
                 df=athenadf,
                 path=location,
@@ -163,14 +165,16 @@ def gettingmetrics (params):
                 mode="append",
                 table=athenatablename
             )
+
         #Create Athena/Glue Table from Parquet
         wr.catalog.table(database='default', table=athenatablename)
         return 'Success'
     else:
-        print("overwriting to existing table")
+        print("Overwrite existing table")
         athenadf = pd.concat(athenadf,ignore_index=True)
         location = 's3://' + bucket + '/' + 'metrics' + '/ests/'
 
+        # Write to S3 bucket in parquet format
         wr.s3.to_parquet(
                 df=athenadf,
                 path=location,
@@ -179,6 +183,7 @@ def gettingmetrics (params):
                 mode="overwrite",
                 table=athenatablename
             )
+
         #Create Athena/Glue Table from Parquet
         wr.catalog.table(database='default', table=athenatablename)
         return 'Success'
