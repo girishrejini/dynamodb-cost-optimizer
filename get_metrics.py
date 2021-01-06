@@ -65,6 +65,8 @@ def get_metric_statistics(table_name,metric_name,interval,end_time,period,statis
         for key,value in metrics.items():
             if key == 'Metrics':
                 for index, val in enumerate(value):
+
+                    # Each dimension represents either the base table or an index
                     print(index + ". Metrics for: ", val['Dimensions'])
 
                     # Get metric stats
@@ -79,7 +81,11 @@ def get_metric_statistics(table_name,metric_name,interval,end_time,period,statis
                     )
                     
                     try:
-                        # Add comments here. What does val['Dimensions'][0] and val['Dimensions'][1] represent?
+                        # If it's just the base table, val['Dimensions'] will only have one item
+                        # If it's the index, then there will be two items in val['Dimensions'] 
+                        #   - val['Dimensions'][0] = Table name
+                        #   - val['Dimensions'][1] = Index name
+                        
                         name = str(val['Dimensions'][0]['Value']) + ":" + str(val['Dimensions'][1]['Value'])
                     except: 
                         name = str(val['Dimensions'][0]['Value'])
@@ -89,12 +95,13 @@ def get_metric_statistics(table_name,metric_name,interval,end_time,period,statis
                     tmdf['metric_name'] = val['MetricName']
                     metr_list.append(tmdf)
 
-        print ('No metrics found')
+        print ('No metrics found. Please check if the table exists or if the time period selected has metrics available')
         # TODO: Return null?
 
     try:
         if not metr_list:
             # Add comments here. Explain what's happening below
+            # TODO: Build data in the format below
             metrdf = pd.concat(metr_list,ignore_index=True)
             metrdf.columns = ['timestamp','unit','Stat','name','metric_name']
             del metrdf['Stat']
